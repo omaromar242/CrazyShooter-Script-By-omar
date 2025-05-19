@@ -7,7 +7,7 @@
  Y888P  ~Y8888P' Y888888P      888888D      Y88888P ~Y8888P' YP   YP  CONVERTER 
 ]=]
 
--- Instances: 78 | Scripts: 24 | Modules: 0 | Tags: 0
+-- Instances: 77 | Scripts: 23 | Modules: 0 | Tags: 0
 local G2L = {};
 
 -- StarterGui.omarCRazyShooter
@@ -611,11 +611,6 @@ G2L["4d"] = Instance.new("LocalScript", G2L["1"]);
 G2L["4d"]["Name"] = [[Changer]];
 
 
--- StarterGui.omarCRazyShooter.LocalScript
-G2L["4e"] = Instance.new("LocalScript", G2L["1"]);
-
-
-
 -- StarterGui.omarCRazyShooter.sigma.EspFrame.second.soundclick
 local function C_b()
 local script = G2L["b"];
@@ -726,130 +721,163 @@ task.spawn(C_10);
 -- StarterGui.omarCRazyShooter.sigma.EspFrame.third.LocalScript
 local function C_11()
 local script = G2L["11"];
-	-- LocalScript under your TextButton
+	-- HighAboveFreecam.lua (LocalScript under your TextButton in StarterGui)
 	
 	local button       = script.Parent
 	local uistroke     = button:FindFirstChildOfClass("UIStroke")
+	assert(uistroke, "This TextButton needs a UIStroke child!")
+	
 	local Players      = game:GetService("Players")
-	local RunSrv       = game:GetService("RunService")
+	local RunService   = game:GetService("RunService")
 	local cam          = workspace.CurrentCamera
-	local localPlayer  = Players.LocalPlayer
-	local teleportPart = workspace:WaitForChild("Lobby"):WaitForChild("Floor")
 	
-	-- STATES & NAMES
-	local isActive          = false
-	local TELEPORT_STEP     = "FreeCamTeleport"
-	local FOLLOW_STEP       = "FreeCamFollow"
-	local FOLLOW_DURATION   = 5        -- seconds to do just follow before teleport starts
+	local localPlayer        = Players.LocalPlayer
+	local FOLLOW_STEP_NAME   = "HighAboveFreecamFollow"
+	local TELEPORT_STEP_NAME = "HighAboveFreecamTeleport"
 	
-	-- ORIGINALS
-	local originalColor
-	local originalCamType, originalCamSubject
-	local originalPlayerCFrame
+	-- CONFIG: heights (in studs)
+	local CHAR_HEIGHT = 120   -- how high your character floats above the target (increased for safety)
+	local CAM_HEIGHT  = 80    -- how high the camera hovers above the target (a bit lower)
 	
-	-- UTIL: get HumanoidRootPart
-	local function getRoot(plr)
+	-- State & backups
+	local isActive             = false
+	local targetRoot           = nil
+	local originalStrokeColor  = uistroke.Color
+	local originalCamType      = cam.CameraType
+	local originalCamSubject   = cam.CameraSubject
+	local originalPlayerCFrame = nil
+	
+	-- UTIL: get a player’s HumanoidRootPart & Humanoid
+	local function getRootAndHum(plr)
 		local ch = plr.Character
-		return ch and ch:FindFirstChild("HumanoidRootPart")
+		if not ch then return nil, nil end
+		local root = ch:FindFirstChild("HumanoidRootPart")
+		local hum  = ch:FindFirstChild("Humanoid")
+		return root, hum
 	end
 	
-	-- UTIL: first alive other player
-	local function getTarget()
+	-- Pick the first alive non-local player
+	local function pickTargetRoot()
 		for _, pl in ipairs(Players:GetPlayers()) do
 			if pl ~= localPlayer then
-				local root = getRoot(pl)
-				local hum  = root and pl.Character:FindFirstChild("Humanoid")
-				if hum and hum.Health > 0 then
-					return pl, root
+				local root, hum = getRootAndHum(pl)
+				if root and hum and hum.Health > 0 then
+					return root
 				end
 			end
 		end
-		return nil, nil
+		return nil
 	end
 	
-	-- TELEPORT STEP: keep you at the floor
-	local function teleportStep()
-		local root = getRoot(localPlayer)
-		if root then
-			root.CFrame = teleportPart.CFrame + Vector3.new(0, 5, 0)
-		end
-	end
-	
-	-- FOLLOW STEP: hold camera behind the current target
+	-- RenderStep: keep camera above current target, looking straight down
 	local function followStep()
-		local target, root = getTarget()
+		-- If our target is invalid or dead, pick a new one
+		if not targetRoot
+			or not targetRoot.Parent
+			or not targetRoot.Parent:FindFirstChild("Humanoid")
+			or targetRoot.Parent.Humanoid.Health <= 0 then
+			targetRoot = pickTargetRoot()
+			if not targetRoot then return end
+		end
+	
+		local tp     = targetRoot.Position
+		local camPos = tp + Vector3.new(0, CAM_HEIGHT, 0)
+		cam.CFrame   = CFrame.new(camPos, tp)
+	end
+	
+	-- RenderStep: keep your character above the same target
+	local function teleportStep()
+		-- If our target is invalid or dead, pick a new one
+		if not targetRoot
+			or not targetRoot.Parent
+			or not targetRoot.Parent:FindFirstChild("Humanoid")
+			or targetRoot.Parent.Humanoid.Health <= 0 then
+			targetRoot = pickTargetRoot()
+			if not targetRoot then return end
+		end
+	
+		local tp   = targetRoot.Position
+		local root = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
 		if root then
-			local offset = -root.CFrame.LookVector * 6 + Vector3.new(0,3,0)
-			local camPos = root.Position + offset
-			local lookAt = root.Position + Vector3.new(0,2,0)
-			cam.CFrame   = CFrame.new(camPos, lookAt)
+			root.CFrame = CFrame.new(tp + Vector3.new(0, CHAR_HEIGHT, 0))
 		end
 	end
 	
-	-- START FOLLOW: bind follow each frame
-	local function startFollow()
-		RunSrv:BindToRenderStep(FOLLOW_STEP, Enum.RenderPriority.Camera.Value, followStep)
+	-- Clean up both RenderSteps
+	local function cleanup()
+		RunService:UnbindFromRenderStep(FOLLOW_STEP_NAME)
+		RunService:UnbindFromRenderStep(TELEPORT_STEP_NAME)
 	end
 	
-	-- START TELEPORT: bind teleport each frame
-	local function startTeleport()
-		RunSrv:BindToRenderStep(TELEPORT_STEP, Enum.RenderPriority.Character.Value, teleportStep)
-	end
-	
-	-- STOP EVERYTHING
-	local function stopAll()
-		RunSrv:UnbindFromRenderStep(FOLLOW_STEP)
-		RunSrv:UnbindFromRenderStep(TELEPORT_STEP)
-	end
-	
-	-- TOGGLE
+	-- Toggle ON/OFF handler
 	local function toggle()
 		isActive = not isActive
 	
 		if isActive then
-			-- ▶ ON: save originals
-			originalColor         = uistroke.Color
-			originalCamType       = cam.CameraType
-			originalCamSubject    = cam.CameraSubject
-			originalPlayerCFrame  = getRoot(localPlayer) and getRoot(localPlayer).CFrame
+			-- ▶ ON: save original player CFrame
+			local root = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
+			originalPlayerCFrame = root and root.CFrame
 	
 			-- UI feedback
-			uistroke.Color = Color3.fromRGB(0,255,0)
+			originalStrokeColor = uistroke.Color
+			uistroke.Color      = Color3.fromRGB(0, 255, 0)
 	
-			-- Camera to scriptable
-			cam.CameraType = Enum.CameraType.Scriptable
-	
-			-- Start following immediately
-			startFollow()
-	
-			-- After FOLLOW_DURATION, begin teleport loop as well
-			task.delay(FOLLOW_DURATION, function()
-				if isActive then
-					startTeleport()
-				end
-			end)
-		else
-			-- ▶ OFF: unbind loops
-			stopAll()
-	
-			-- restore UI
-			uistroke.Color = originalColor
-	
-			-- restore camera
-			cam.CameraType    = originalCamType
-			cam.CameraSubject = originalCamSubject
-	
-			-- restore player position
-			local root = getRoot(localPlayer)
-			if root and originalPlayerCFrame then
-				root.CFrame = originalPlayerCFrame
+			-- Pick initial target
+			targetRoot = pickTargetRoot()
+			if not targetRoot then
+				warn("No valid target found—waiting for someone to spawn.")
 			end
+	
+			-- Switch camera to scriptable freecam
+			cam.CameraType    = Enum.CameraType.Scriptable
+			cam.CameraSubject = nil
+	
+			-- Bind both loops
+			RunService:BindToRenderStep(FOLLOW_STEP_NAME,   Enum.RenderPriority.Camera.Value,    followStep)
+			RunService:BindToRenderStep(TELEPORT_STEP_NAME, Enum.RenderPriority.Character.Value, teleportStep)
+	
+		else
+			-- ▶ OFF: stop loops
+			cleanup()
+	
+			-- Restore UIStroke
+			uistroke.Color = originalStrokeColor
+	
+			-- Restore camera to follow your Humanoid again
+			cam.CameraType = Enum.CameraType.Custom
+			local char = localPlayer.Character
+			if char and char:FindFirstChild("Humanoid") then
+				cam.CameraSubject = char.Humanoid
+			end
+	
+			-- Teleport you to a random other player (5 studs above), or back to original spot
+			local aliveRoots = {}
+			for _, pl in ipairs(Players:GetPlayers()) do
+				if pl ~= localPlayer then
+					local root, hum = getRootAndHum(pl)
+					if root and hum and hum.Health > 0 then
+						table.insert(aliveRoots, root)
+					end
+				end
+			end
+	
+			local root = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
+			if root then
+				if #aliveRoots > 0 then
+					local choice = aliveRoots[math.random(1, #aliveRoots)]
+					root.CFrame = CFrame.new(choice.Position + Vector3.new(0,5,0))
+				elseif originalPlayerCFrame then
+					root.CFrame = originalPlayerCFrame
+				end
+			end
+	
+			targetRoot = nil
 		end
 	end
 	
-	-- Connect to button
+	-- Hook up the button
 	button.Activated:Connect(toggle)
-	print("[FreeCamBehindPlayers] Ready. Click to toggle.") 
+	print("[HighAboveFreecam] Ready — click to toggle!")
 	
 end;
 task.spawn(C_11);
@@ -1457,117 +1485,146 @@ task.spawn(C_47);
 -- StarterGui.omarCRazyShooter.sigma.MiscFrame.AutoEsp.LocalScript
 local function C_48()
 local script = G2L["48"];
-	--!strict
-	local button    = script.Parent :: TextButton
-	local parentFrm = button.Parent    :: Frame
-	local inputBox  = parentFrm:WaitForChild("after")   :: TextBox
+	-- LocalScript (parented to your TextButton)
 	
-	-- Ensure a UIStroke on the button
-	local stroke = button:FindFirstChildWhichIsA("UIStroke")
-	if not stroke then
-		stroke = Instance.new("UIStroke")
-		stroke.Thickness = 2
-		stroke.Parent = button
+	local Players     = game:GetService("Players")
+	local RunService  = game:GetService("RunService")
+	local LocalPlayer = Players.LocalPlayer
+	
+	-- CONFIG
+	local ON_COLOR      = Color3.fromRGB(  0, 255,   0)  -- green when ON
+	local button        = script.Parent
+	local uiStroke      = button:FindFirstChildOfClass("UIStroke")
+	assert(uiStroke, "TextButton must have a UIStroke child")
+	
+	-- STATE
+	local espEnabled    = false
+	local origStrokeCol = uiStroke.Color
+	
+	-- TRACKERS
+	local conns         = {}  -- for all RenderStepped & event connections
+	local guiRefs       = {}  -- for all created BillboardGuis
+	
+	-- Utility: create a single health‐bar BillboardGui
+	local function createHealthBar(head)
+		local billboardGui = Instance.new("BillboardGui")
+		billboardGui.Name           = "ESPHealthBar"
+		billboardGui.Adornee        = head
+		billboardGui.AlwaysOnTop    = true
+		billboardGui.Size           = UDim2.new(6,0,1,0)
+		billboardGui.StudsOffset    = Vector3.new(0,4,0)
+		billboardGui.Parent         = head
+	
+		local bg = Instance.new("Frame", billboardGui)
+		bg.Size            = UDim2.new(1,0,1,0)
+		bg.BackgroundColor3= Color3.fromRGB(35,35,35)
+		bg.BorderSizePixel = 0
+		Instance.new("UICorner", bg).CornerRadius = UDim.new(0,10)
+	
+		local bar = Instance.new("Frame", bg)
+		bar.Name           = "Bar"
+		bar.Size           = UDim2.new(1,0,1,0)
+		bar.BackgroundColor3 = Color3.fromRGB(60,255,60)
+		bar.BorderSizePixel  = 0
+		Instance.new("UICorner", bar).CornerRadius = UDim.new(0,10)
+	
+		return billboardGui, bar
 	end
-	local originalColor = stroke.Color
 	
-	-- RemoteEvent
-	local oreServiceRE = game:GetService("ReplicatedStorage")
-		:WaitForChild("Packages")
-		:WaitForChild("Knit")
-		:WaitForChild("Services")
-		:WaitForChild("OreService")
-		:WaitForChild("RE")
-		:WaitForChild("LockItem") :: RemoteEvent
+	-- Attach one bar + updater to a Character
+	local function attachToCharacter(char)
+		local head     = char:FindFirstChild("Head")
+		local humanoid = char:FindFirstChildOfClass("Humanoid")
+		if not head or not humanoid then return end
 	
-	-- Notification helper
-	local StarterGui = game:GetService("StarterGui")
-	local function notify(msg: string)
-		StarterGui:SetCore("SendNotification", {
-			Title    = "Invalid Input",
-			Text     = msg,
-			Duration = 3,
-		})
-	end
+		-- avoid duplicates
+		if head:FindFirstChild("ESPHealthBar") then return end
 	
-	-- State
-	local isOn = false
-	local loopTask
+		local gui, bar = createHealthBar(head)
+		table.insert(guiRefs, gui)
 	
-	-- Parse “k” suffix to number
-	local function parseThreshold(str: string): number?
-		str = str:lower():gsub("%s+", "")
-		if str:match("k$") then
-			local n = tonumber(str:sub(1, -2))
-			if n then return n * 1000 end
-		end
-		return tonumber(str)
-	end
-	
-	-- Validate input on focus lost
-	inputBox.FocusLost:Connect(function(enterPressed)
-		local raw = inputBox.Text
-		local num = parseThreshold(raw) or 0
-		if num < 1000 then
-			inputBox.Text = ""
-			notify("You can’t put any values under 1k.")
-		end
-	end)
-	
-	-- The scanning loop
-	local function startLoop(minChance: number)
-		loopTask = task.spawn(function()
-			local Players = game:GetService("Players")
-			local seen = {} :: {[Instance]: boolean}
-			while isOn do
-				local backpack = Players.LocalPlayer:WaitForChild("Backpack")
-				for _, tool in ipairs(backpack:GetChildren()) do
-					if tool:IsA("Tool") then
-						local chance = tool:GetAttribute("Chance")
-						local locked = tool:GetAttribute("Locked")
-						if typeof(chance) == "number"
-							and chance >= minChance
-							and not locked
-							and not seen[tool] then
-	
-							seen[tool] = true
-							oreServiceRE:FireServer(tool)
-						end
-					end
-				end
-				task.wait(1)
+		-- updater loop
+		local conn = RunService.RenderStepped:Connect(function()
+			if humanoid.Health > 0 then
+				local pct = math.clamp(humanoid.Health / humanoid.MaxHealth, 0, 1)
+				bar:TweenSize(UDim2.new(pct,0,1,0), "Out", "Quad", 0.1, true)
+			else
+				bar:TweenSize(UDim2.new(0,0,1,0), "Out", "Quad", 0.1, true)
 			end
 		end)
+		table.insert(conns, conn)
+	
+		-- stop on death
+		local dconn = humanoid.Died:Connect(function()
+			if conn then conn:Disconnect() end
+		end)
+		table.insert(conns, dconn)
 	end
 	
-	-- Button click toggles ON/OFF
-	button.MouseButton1Click:Connect(function()
-		if not isOn then
-			-- OFF → ON
-			isOn = true
-			stroke.Color     = Color3.fromRGB(0,255,0)
-			inputBox.Visible = true
+	-- Set up ESP on a given Player
+	local function setupPlayer(player)
+		-- when they spawn
+		local cconn = player.CharacterAdded:Connect(function(char)
+			-- give the character a moment to load
+			char:WaitForChild("Head", 2)
+			char:WaitForChild("Humanoid", 2)
+			attachToCharacter(char)
+		end)
+		table.insert(conns, cconn)
 	
-			-- Read threshold (default to 1000 if empty/invalid)
-			local num = parseThreshold(inputBox.Text) or 1000
-			if num < 1000 then num = 1000 end
+		-- if already spawned
+		if player.Character then
+			attachToCharacter(player.Character)
+		end
+	end
 	
-			startLoop(num)
-		else
-			-- ON → OFF
-			isOn = false
-			if loopTask then
-				task.cancel(loopTask)
-				loopTask = nil
+	-- ENABLE ESP
+	local function enableESP()
+		-- hook all current players
+		for _, pl in ipairs(Players:GetPlayers()) do
+			if pl ~= LocalPlayer then
+				setupPlayer(pl)
 			end
+		end
+		-- hook future players joining
+		local pconn = Players.PlayerAdded:Connect(function(pl)
+			if pl ~= LocalPlayer then
+				setupPlayer(pl)
+			end
+		end)
+		table.insert(conns, pconn)
+	end
 	
-			stroke.Color     = originalColor
-			inputBox.Visible = false
+	-- DISABLE ESP
+	local function disableESP()
+		-- disconnect everything
+		for _, c in ipairs(conns) do
+			if c and c.Disconnect then
+				c:Disconnect()
+			end
+		end
+		conns = {}
+		-- destroy all GUIs
+		for _, gui in ipairs(guiRefs) do
+			if gui and gui.Parent then
+				gui:Destroy()
+			end
+		end
+		guiRefs = {}
+	end
+	
+	-- BUTTON CLICK HANDLER
+	button.MouseButton1Click:Connect(function()
+		espEnabled = not espEnabled
+	
+		if espEnabled then
+			uiStroke.Color = ON_COLOR
+			enableESP()
+		else
+			uiStroke.Color = origStrokeCol
+			disableESP()
 		end
 	end)
-	
-	-- INITIAL STATE: hidden textbox
-	inputBox.Visible = false
 	
 end;
 task.spawn(C_48);
@@ -1691,69 +1748,5 @@ local script = G2L["4d"];
 	
 end;
 task.spawn(C_4d);
--- StarterGui.omarCRazyShooter.LocalScript
-local function C_4e()
-local script = G2L["4e"];
-	local Players = game:GetService("Players")
-	local StarterGui = game:GetService("StarterGui")
-	local UserInputService = game:GetService("UserInputService")
-	local RunService = game:GetService("RunService")
-	local player = Players.LocalPlayer
-	local camera = workspace.CurrentCamera
-	
-	-- Function to send notifications
-	local function sendNotif(title, text, duration)
-		pcall(function()
-			StarterGui:SetCore("SendNotification", {
-				Title = title,
-				Text = text,
-				Duration = duration,
-				Button1 = "OK"
-			})
-		end)
-	end
-	
-	-- Show credit message to all players
-	sendNotif("📢 CREDITS", "✅ Made by omar_gamer", 5)
-	
-	-- Only for PC players
-	if UserInputService.KeyboardEnabled and not UserInputService.TouchEnabled then
-		sendNotif("🔓 MOUSE CONTROL", "📌 PRESS [ B ] TO UNLOCK YOUR MOUSE\n📌 PRESS AGAIN TO LOCK IT BACK", math.huge)
-	
-		local mouseUnlocked = false
-	
-		local function applyMouseState()
-			if mouseUnlocked then
-				UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-				UserInputService.MouseIconEnabled = true
-				camera.CameraType = Enum.CameraType.Custom
-			else
-				UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
-				UserInputService.MouseIconEnabled = false
-				camera.CameraType = Enum.CameraType.Custom
-			end
-		end
-	
-		UserInputService.InputBegan:Connect(function(input, gameProcessed)
-			if gameProcessed then return end
-			if input.KeyCode == Enum.KeyCode.B then
-				mouseUnlocked = not mouseUnlocked
-				applyMouseState()
-			end
-		end)
-	
-		-- Keep forcing third-person and correct mouse state
-		RunService.Heartbeat:Connect(function()
-			if camera.CameraType ~= Enum.CameraType.Custom then
-				camera.CameraType = Enum.CameraType.Custom
-			end
-			if mouseUnlocked and UserInputService.MouseBehavior ~= Enum.MouseBehavior.Default then
-				applyMouseState()
-			end
-		end)
-	end
-	
-end;
-task.spawn(C_4e);
 
 return G2L["1"], require;
