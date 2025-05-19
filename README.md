@@ -736,8 +736,8 @@ local script = G2L["11"];
 	local TELEPORT_STEP_NAME = "HighAboveFreecamTeleport"
 	
 	-- CONFIG: heights (in studs)
-	local CHAR_HEIGHT = 120   -- how high your character floats above the target (increased for safety)
-	local CAM_HEIGHT  = 80    -- how high the camera hovers above the target (a bit lower)
+	local CHAR_HEIGHT = 120   -- how high your character floats above the target
+	local CAM_HEIGHT  = 40    -- camera height above the target (lower for faster shots)
 	
 	-- State & backups
 	local isActive             = false
@@ -771,7 +771,7 @@ local script = G2L["11"];
 	
 	-- RenderStep: keep camera above current target, looking straight down
 	local function followStep()
-		-- If our target is invalid or dead, pick a new one
+		-- pick new if dead/invalid
 		if not targetRoot
 			or not targetRoot.Parent
 			or not targetRoot.Parent:FindFirstChild("Humanoid")
@@ -787,7 +787,7 @@ local script = G2L["11"];
 	
 	-- RenderStep: keep your character above the same target
 	local function teleportStep()
-		-- If our target is invalid or dead, pick a new one
+		-- pick new if dead/invalid
 		if not targetRoot
 			or not targetRoot.Parent
 			or not targetRoot.Parent:FindFirstChild("Humanoid")
